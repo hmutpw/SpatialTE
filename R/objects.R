@@ -160,10 +160,15 @@ NULL
         colData          = S4Vectors::DataFrame(col_meta),
         spatialCoords    = coord_mat
       )
+      metadata[["spatialte_result"]] <- TRUE
       S4Vectors::metadata(spe) <- metadata
-      class(spe) <- c("SpatialTEResult", class(spe))
       message("  Result: SpatialExperiment object created.")
-      return(spe)
+      # Wrap in S3 envelope (same as SCE) to keep S3 dispatch working
+      result <- structure(list(sce=spe, metadata=metadata,
+                                n_tx=nrow(row_meta), n_spots=nrow(col_meta),
+                                mode=mode),
+                           class="SpatialTEResult")
+      return(result)
     }, error = function(e) {
       message("  SpatialExperiment creation failed: ", e$message)
     })

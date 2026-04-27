@@ -1,0 +1,38 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+### 1. test files
+
+#### 1.1 test Spatial TE files
+
+```{r}
+remotes::install_github("hmutpw/SpatialTE")
+
+BiocManager::install("SpatialExperiment")   # for spatial objects
+BiocManager::install("rtracklayer")          # faster GTF parsing
+
+library(SpatialTE)
+
+result <- run_spatialTE(
+  pe_bam      = "spatial_pe.Aligned.toTranscriptome.out.bam",
+  gtf_file    = "transcript_models.gtf",
+  lr_input    = "isoquant_em_counts.tsv.gz",   # from IsoEM
+  spot_coords = "tissue_positions.csv",          # spot coordinates
+  sample_id   = "sample_A"
+)
+
+print(result)
+# SpatialTEResult
+#   Mode       : spatial
+#   Transcripts: 98421
+#   Spots/cells: 4823
+#   Converged  : 4823 / 4823 spots
+#   Median unique frac: 0.612
+
+write_spatialTE(result, outdir = "results/sample_A/")
+
+
+```
+
