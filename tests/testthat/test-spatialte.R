@@ -599,3 +599,217 @@ test_that(".write_file writes .gz", {
   expect_equal(nrow(dt2), 5L)
   unlink(tmpf)
 })
+
+# ============================================================
+# Toy data files existence
+# ============================================================
+
+test_that("all expected toy data files exist", {
+  expected <- c(
+    "toy_gtf.gtf", "toy_gtf.gtf.gz",
+    "toy_lr_counts.tsv", "toy_lr_counts.tsv.gz",
+    "toy_lr_counts_multi.tsv",
+    "toy_coords.csv", "toy_coords_visium.csv",
+    "toy_ec_raw.tsv", "toy_ec_raw.tsv.gz",
+    "toy_coverage_bias.tsv", "toy_frag_length.tsv",
+    "toy_sample_ids.txt", "toy_sample_ids.txt.gz"
+  )
+  for (f in expected) {
+    path <- system.file("extdata", f, package="SpatialTE")
+    expect_true(nchar(path) > 0 && file.exists(path),
+                label=paste("missing:", f))
+  }
+})
+
+# ============================================================
+# Visium coordinate loading
+# ============================================================
+
+test_that(".load_coords auto-detects Visium format", {
+  vis_f <- system.file("extdata","toy_coords_visium.csv", package="SpatialTE")
+  dt    <- SpatialTE:::.load_coords(vis_f, format="auto")
+  expect_true(all(c("spot_id","x","y") %in% names(dt)))
+  expect_equal(nrow(dt), 16L)
+})
+
+test_that(".load_coords explicit visium format", {
+  vis_f <- system.file("extdata","toy_coords_visium.csv", package="SpatialTE")
+  dt    <- SpatialTE:::.load_coords(vis_f, format="visium")
+  expect_equal(nrow(dt), 16L)
+  expect_true(all(dt$x > 0))
+})
+
+# ============================================================
+# EC raw data loading and building
+# ============================================================
+
+test_that("toy_ec_raw can be loaded and built into SpotECCounts", {
+  ec_raw_f <- system.file("extdata","toy_ec_raw.tsv", package="SpatialTE")
+  ec_raw   <- fread(ec_raw_f)
+  expect_true(all(c("spot_key","t_idx","nh") %in% names(ec_raw)))
+  expect_true(nrow(ec_raw) > 0)
+  ec_raw[, sample_id := "sA"]
+  tx_names <- c(paste0("ENST",sprintf("%011d",1:8)),"novel.1","novel.2")
+  res <- SpatialTE:::.build_ec_one_sample(ec_raw, tx_names, "sA",
+                                           "barcode_umi", 200L)
+  expect_s3_class(res, "SpotECCounts")
+  expect_true(length(res$spot_ids) == 9L)
+})
+
+test_that("toy_ec_raw.gz loads correctly", {
+  ec_raw_gz_f <- system.file("extdata","toy_ec_raw.tsv.gz", package="SpatialTE")
+  ec_raw <- fread(ec_raw_gz_f)
+  expect_true(nrow(ec_raw) > 0)
+})
+
+# ============================================================
+# Coverage bias and fragment length profiles
+# ============================================================
+
+test_that("toy_coverage_bias has 4 bin columns", {
+  cov_f <- system.file("extdata","toy_coverage_bias.tsv", package="SpatialTE")
+  dt    <- fread(cov_f)
+  expect_true(all(c("bin","short","medium","long","vlong") %in% names(dt)))
+  expect_equal(nrow(dt), 100L)
+  # g(x) should have mean ~1 per bin
+  for (col in c("short","medium","long","vlong")) {
+    expect_equal(mean(dt[[col]]), 1.0, tolerance=0.01,
+                 label=paste("mean of", col))
+  }
+})
+
+test_that("toy_frag_length has expected columns", {
+  frag_f <- system.file("extdata","toy_frag_length.tsv", package="SpatialTE")
+  dt     <- fread(frag_f)
+  expect_true(all(c("read_length","count") %in% names(dt)))
+  expect_true(nrow(dt) > 0)
+  expect_true(all(dt$count >= 0))
+  # Peak should be around 100-110 bp
+  peak_len <- dt$read_length[which.max(dt$count)]
+  expect_true(peak_len >= 95 && peak_len <= 115)
+})
+
+# ============================================================
+# Multi-sample LR prior
+# ============================================================
+
+test_that("multi-sample LR prior loads correctly", {
+  lr_multi_f <- system.file("extdata","toy_lr_counts_multi.tsv", package="SpatialTE")
+  gtf        <- SpatialTE:::.parse_gtf(gtf_f)
+  # Use first sample only
+  lr_multi   <- fread(lr_multi_f)[sample_id == "LR_sampleA"]
+  pr         <- SpatialTE:::.load_lr_prior(lr_multi, gtf)
+  expect_equal(sum(pr$pi_lr), 1, tolerance=1e-6)
+})
+
+# ============================================================
+# Sample ID file
+# ============================================================
+
+test_that("toy_sample_ids.txt has 2 columns", {
+  sid_f <- system.file("extdata","toy_sample_ids.txt", package="SpatialTE")
+  dt    <- fread(sid_f, header=FALSE, col.names=c("read_id","sample_id"))
+  expect_equal(ncol(dt), 2L)
+  expect_true(all(c("sample_A","sample_B","sample_C") %in% unique(dt$sample_id)))
+})
+
+test_that("toy_sample_ids.txt.gz loads correctly", {
+  sid_gz_f <- system.file("extdata","toy_sample_ids.txt.gz", package="SpatialTE")
+  dt       <- fread(sid_gz_f, header=FALSE)
+  expect_equal(ncol(dt), 2L)
+  expect_true(nrow(dt) > 0)
+})
+
+# ============================================================
+# End-to-end pipeline using toy EC data (no BAM needed)
+# ============================================================
+
+test_that("full pipeline runs with toy EC data", {
+  gtf      <- SpatialTE:::.parse_gtf(gtf_f)
+  lr_pr    <- SpatialTE:::.load_lr_prior(lr_f, gtf)
+  ec_raw_f <- system.file("extdata","toy_ec_raw.tsv", package="SpatialTE")
+  ec_raw   <- fread(ec_raw_f)
+  ec_raw[, sample_id := "sA"]
+
+  # Build EC
+  ec_c <- SpatialTE:::.build_ec_one_sample(
+    ec_raw, c(paste0("ENST",sprintf("%011d",1:8)),"novel.1","novel.2"),
+    "sA", "barcode_umi", 200L)
+  expect_s3_class(ec_c, "SpotECCounts")
+
+  # Compute eff_len using toy coverage profile
+  cov_f  <- system.file("extdata","toy_coverage_bias.tsv", package="SpatialTE")
+  frag_f <- system.file("extdata","toy_frag_length.tsv", package="SpatialTE")
+  cov_dt  <- fread(cov_f)
+  frag_dt <- fread(frag_f)
+  g_cov   <- list(short=cov_dt$short, medium=cov_dt$medium,
+                   long=cov_dt$long,   vlong=cov_dt$vlong)
+  frag_tab <- setNames(frag_dt$count, as.character(frag_dt$read_length))
+  el <- SpatialTE:::.compute_eff_len(gtf, g_cov, frag_tab)
+  expect_true(all(el >= 50))
+
+  # Build prior + run EM
+  pr   <- SpatialTE:::.build_prior(lr_pr, ec_c, el, gamma_base=10.0)
+  em_r <- SpatialTE:::.run_em_all_spots(ec_c, pr, el,
+                                         max_iter=100L, tol=1e-4, n_cores=1L)
+  expect_true(all(em_r$count_mat@x >= 0))
+
+  # Build result
+  r <- SpatialTE:::.build_result(
+    em_r, ec_c, pr, gtf, el, NULL, lr_pr, 10.0,
+    list(sample_id="sA", ec_data=ec_c), 50)
+  expect_s3_class(r, "SpatialTEResult")
+  expect_output(print(r), "SpatialTEResult")
+
+  # Write outputs
+  tmpdir <- tempfile()
+  write_spatialTE(r, tmpdir, compress=FALSE, write_sharing=TRUE)
+  expect_true(file.exists(file.path(tmpdir,"counts.tsv")))
+  expect_true(file.exists(file.path(tmpdir,"count_matrix.tsv")))
+  expect_true(file.exists(file.path(tmpdir,"tpm_matrix.tsv")))
+  expect_true(file.exists(file.path(tmpdir,"efflen_table.tsv")))
+  expect_true(file.exists(file.path(tmpdir,"qc_summary.tsv")))
+
+  # Verify counts file content
+  counts_dt <- fread(file.path(tmpdir,"counts.tsv"))
+  expect_true(all(c("spot_id","transcript_id","em_count","tpm") %in% names(counts_dt)))
+  expect_true(all(counts_dt$em_count >= 0))
+  expect_true(all(counts_dt$tpm >= 0))
+
+  unlink(tmpdir, recursive=TRUE)
+})
+
+test_that("spatial pipeline with toy EC data and coordinates", {
+  gtf      <- SpatialTE:::.parse_gtf(gtf_f)
+  lr_pr    <- SpatialTE:::.load_lr_prior(lr_f, gtf)
+  ec_raw_f <- system.file("extdata","toy_ec_raw.tsv", package="SpatialTE")
+  ec_raw   <- fread(ec_raw_f); ec_raw[, sample_id := "sA"]
+  tx_names <- c(paste0("ENST",sprintf("%011d",1:8)),"novel.1","novel.2")
+  ec_c     <- SpatialTE:::.build_ec_one_sample(ec_raw, tx_names,
+                                                "sA","barcode_umi",200L)
+  cov_f    <- system.file("extdata","toy_coverage_bias.tsv",package="SpatialTE")
+  frag_f   <- system.file("extdata","toy_frag_length.tsv",package="SpatialTE")
+  cov_dt   <- fread(cov_f); frag_dt <- fread(frag_f)
+  g_cov    <- list(short=cov_dt$short,medium=cov_dt$medium,
+                    long=cov_dt$long,vlong=cov_dt$vlong)
+  frag_tab <- setNames(frag_dt$count,as.character(frag_dt$read_length))
+  el       <- SpatialTE:::.compute_eff_len(gtf,g_cov,frag_tab)
+
+  # Load coordinates and build neighbor graph
+  coords_f2 <- system.file("extdata","toy_coords.csv",package="SpatialTE")
+  coords    <- SpatialTE:::.load_coords(coords_f2)
+  ng        <- SpatialTE:::.build_neighbor_graph(coords)
+  expect_true(!is.null(ng$neighbors))
+
+  # Build spatial prior
+  pr <- SpatialTE:::.build_prior(lr_pr,ec_c,el,gamma_base=8.0,
+                                  neighbor_graph=ng,alpha_local=0.7)
+  expect_true(!is.null(pr$alpha_mat))
+
+  # Run EM and build result with coords
+  em_r <- SpatialTE:::.run_em_all_spots(ec_c,pr,el,max_iter=50L,tol=1e-3)
+  r    <- SpatialTE:::.build_result(em_r,ec_c,pr,gtf,el,coords,lr_pr,8.0,
+                                     list(sample_id="sA",ec_data=ec_c),50)
+  cd   <- SpatialTE:::.get_coldata(r)
+  expect_true(all(c("x","y") %in% names(cd)))
+})
