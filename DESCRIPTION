@@ -1,0 +1,30 @@
+Package: SpatialTE
+Type: Package
+Title: Isoform-Level Quantification for Spatial and Single-Cell
+        Transcriptomics
+Version: 0.1.0
+Authors@R: person("Puwen", "Tan", email = "hmutpw@gmail.com",
+    role = c("aut", "cre"))
+Description: EM-based isoform quantification for FFPE spatial transcriptomics
+    and single-cell RNA-seq data. Integrates long-read bulk RNA-seq as a
+    Dirichlet prior to guide spot/cell-level isoform estimation. Supports
+    STAR toTranscriptome BAM input, FFPE-corrected effective length estimation,
+    equivalence class compression, and spatial prior smoothing. Compatible with
+    SpatialExperiment, SingleCellExperiment, Seurat, and downstream tools.
+    Designed as a companion to the IsoEM package for TE-enriched isoform
+    quantification workflows.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2.0)
+Imports: data.table (>= 1.14.0), Matrix (>= 1.5.0), Rsamtools (>=
+        2.14.0), BiocParallel (>= 1.32.0), methods, stats, utils
+Suggests: testthat (>= 3.0.0), SpatialExperiment, SingleCellExperiment,
+        SummarizedExperiment, S4Vectors, Seurat, IsoEM, rtracklayer,
+        ggplot2, knitr, rmarkdown
+RoxygenNote: 7.3.1
+Config/testthat/edition: 3
+biocViews: RNASeq, SingleCell, Spatial, Transcriptomics, GeneExpression
+NeedsCompilation: no
+Packaged: 2026-04-27 06:03:34 UTC; root
+Author: Puwen Tan [aut, cre]
+Maintainer: Puwen Tan <hmutpw@gmail.com>
